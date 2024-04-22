@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "tmu-open-course-scraper"
+version = "0.1.0"
+description = "web scraping scripts for tmu open course"
+authors = ["Jackie Li <li.jackie565@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+psycopg2 = "^2.9.9"
+requests = "^2.31.0"
+bs4 = "^0.0.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

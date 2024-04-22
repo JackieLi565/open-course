@@ -1,0 +1,11 @@
+.venv
+__pycache__
+database.config.json
+test.pgsql
+tmp
+oauth.json
+
+.env
+.env.local
+.env.production
+.env.development
