@@ -1,95 +1,62 @@
-from utils import get_argv, build_url, get_html
-import database
-import uuid
-import os
+"""
+courses
+  - course
+"""
+from psycopg2 import DatabaseError
+from database import database_connection, get_all_category_uri
+from utils import build_url
+import requests
 
-args = get_argv()
+static = '/jcr:content/content/rescalendarcoursestack.data.1.json'
 
-if len(args) > 1:
-    print(f'Error: too many arguments provided')
-    exit()
+def get_course_data(url: str):
+    """
+        important data signature
+        {
+            data: {
+                page: str
+                courseCode: str
+                longTitle: str
 
-def parse_course_info(course_string):
-    parts = course_string.split(' (', 1)
-    if len(parts) != 2:
-        return None  
+                lectureLength?: str
+                labLength?: str
+                
+                gpaWeight: str
+                courseCount: str
+                courseDescription: str
+                
+                courseAttribute?: "LL"
 
-    course_name = parts[0].strip()  
-    courses = parts[1].strip() 
+                antirequisites?: str |
+                prerequisites?: str  | <- JSON-escaped HTML
+                corequisites?: str   |
+            }[]
+        }
+    """
 
-    if courses.endswith(')'):
-        courses = courses[:-1]
-    else:
-        return None  
+conn, curr = None, None
+try:
+    conn = database_connection()
+    curr = conn.cursor()
 
-    course_list = [course.strip() for course in courses.split(',')]
+    curr.execute(get_all_category_uri())
+
+    rows = curr.fetchall()
     
-    return {
-        'name': course_name,
-        'prefixes': course_list
-    }
-    
-url_path = '/calendar/2023-2024/courses/'
+    for row in rows:
+        url = build_url(row[0][:-5] + static)
+        res = requests.get(url)
 
-if len(args) == 1:
-    url_path = args[0]
+        if res.status_code != 200:
+            print(f"Warning: request to {url} failed")
+        
+        print(res.json())
+        
 
-soup = get_html(build_url(url_path))
+except (Exception, DatabaseError) as error:
+    exit(f"Error: {error}")
+finally:
+    if conn and curr:
+        conn.close()
+        curr.close()
 
-table_rows = soup.findAll('tr')[1::] # exclude header
-
-faculty_map = {}
-category_map = {}
-
-entries = []
-
-for row in table_rows:
-    tds = row.find_all('td')
-    a_tag = tds[0].find('a')
-
-    course = parse_course_info(a_tag.text)
-
-    if not course:
-        print(f'Error: {a_tag.text}')
-        continue
-
-    faculties = tds[1].text.replace('\u00a0', ' ').strip().split(' / ')
-    href = a_tag.get('href')
-    prefixes = course['prefixes']
-    category = course['name']
-
-    for faculty in faculties:
-        if faculty not in faculty_map:
-            faculty_map[faculty] = uuid.uuid4()
-
-    category_map[category] = uuid.uuid4()
-
-    entries.append({
-        'faculties': faculties,
-        'href': href,
-        'prefixes': prefixes,
-        'category': category
-    })
-
-conn = database.database_connection()
-curr = conn.cursor()
-
-# insert all faculty data
-for faculty, faculty_id in faculty_map.items():
-    curr.execute(database.insert_faculty(faculty_id, faculty))
-
-# insert all category, prefix & category_faculty relationships
-for entry in entries:
-    category, href = entry['category'], entry['href']
-    category_id = category_map[category]
-
-    curr.execute(database.insert_category(category_id, category, href))
-    
-    for faculty in entry['faculties']:
-        faculty_id = faculty_map[faculty]
-        curr.execute(database.insert_category_faculty(uuid.uuid4(), category_id, faculty_id))
-    
-    for prefix in entry['prefixes']:
-        curr.execute(database.insert_prefix(uuid.uuid4(), prefix, category_id))
-
-conn.commit()
